@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des Notes et Classement</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #2c3e50; }
+        form { display: flex; gap: 10px; margin-bottom: 25px; justify-content: center; flex-wrap: wrap; }
+        input, button { padding: 10px 15px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+        button { background-color: #27ae60; color: white; border: none; cursor: pointer; transition: 0.3s; }
+        button:hover { background-color: #219150; }
+        .btn-danger { background-color: #c0392b; }
+        .btn-danger:hover { background-color: #a93226; }
+        .btn-warning { background-color: #f39c12; }
+        .btn-warning:hover { background-color: #d68910; }
+        .btn-info { background-color: #2980b9; }
+        .btn-info:hover { background-color: #1f618d; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: #34495e; color: white; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .mention-tb { color: #27ae60; font-weight: bold; }
+        .mention-b { color: #2980b9; font-weight: bold; }
+        .mention-ab { color: #f39c12; font-weight: bold; }
+        .mention-p { color: #d35400; font-weight: bold; }
+        .mention-f { color: #c0392b; font-weight: bold; }
+        .action-btns { display: flex; gap: 5px; }
+        .action-btns button { padding: 5px 10px; font-size: 14px; }
+        .stats { display: flex; justify-content: space-around; margin: 20px 0; flex-wrap: wrap; }
+        .stat-box { background-color: #ecf0f1; padding: 15px 20px; border-radius: 5px; text-align: center; flex: 1; min-width: 150px; margin: 5px; }
+        .stat-box strong { display: block; font-size: 18px; color: #2c3e50; }
+        .stat-box span { color: #7f8c8d; font-size: 14px; }
+        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-width: 400px; width: 90%; }
+        .modal-content h3 { margin-top: 0; color: #2c3e50; }
+        .modal-content input { width: 100%; margin-bottom: 15px; box-sizing: border-box; }
+        .modal-buttons { display: flex; gap: 10px; }
+        .modal-buttons button { flex: 1; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📊 Saisie & Classement des Évaluations</h1>
+
+    <!-- Formulaire d'ajout -->
+    <form id="noteForm">
+        <input type="text" id="nom" placeholder="Nom & Prénom" required>
+        <input type="number" id="note" placeholder="Note / 20" step="0.25" min="0" max="20" required>
+        <button type="submit">➕ Ajouter</button>
+    </form>
+
+    <!-- Contrôles -->
+    <div class="controls">
+        <button class="btn-info" onclick="exporterCSV()">📥 Exporter CSV</button>
+        <button class="btn-warning" onclick="exporterJSON()">📥 Exporter JSON</button>
+        <button class="btn-danger" onclick="effacerTout()">🗑️ Effacer tout</button>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="stats" id="stats"></div>
+
+    <h2>Tableau des Résultats</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Rang</th>
+                <th>Nom & Prénom</th>
+                <th>Note / 20</th>
+                <th>Mention</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="tableauResultats">
+            <!-- Données générées automatiquement -->
+        </tbody>
+    </table>
+</div>
+
+<!-- Modal d'édition -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3>Modifier l'étudiant</h3>
+        <input type="text" id="editNom" placeholder="Nom & Prénom">
+        <input type="number" id="editNote" placeholder="Note / 20" step="0.25" min="0" max="20">
+        <div class="modal-buttons">
+            <button class="btn-info" onclick="sauvegarderEdition()">Sauvegarder</button>
+            <button class="btn-danger" onclick="fermerModal()">Annuler</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let etudiants = [];
+    let editIndex = -1;
+
+    // Charger les données depuis le localStorage
+    function chargerDonnees() {
+        const donnees = localStorage.getItem('etudiants');
+        if (donnees) {
+            etudiants = JSON.parse(donnees);
+            actualiserTableau();
+        }
+    }
+
+    // Sauvegarder les données dans le localStorage
+    function sauvegarderDonnees() {
+        localStorage.setItem('etudiants', JSON.stringify(etudiants));
+    }
+
+    document.getElementById('noteForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const nom = document.getElementById('nom').value.trim();
+        const note = parseFloat(document.getElementById('note').value);
+
+        if (!nom) {
+            alert('Veuillez entrer un nom valide');
+            return;
+        }
+
+        etudiants.push({ nom, note });
+        sauvegarderDonnees();
+        
+        document.getElementById('nom').value = '';
+        document.getElementById('note').value = '';
+
+        actualiserTableau();
+    });
+
+    function ObtenirMention(note) {
+        if (note >= 16) return { texte: 'Très Bien', classe: 'mention-tb' };
+        if (note >= 14) return { texte: 'Bien', classe: 'mention-b' };
+        if (note >= 12) return { texte: 'Assez Bien', classe: 'mention-ab' };
+        if (note >= 10) return { texte: 'Passable', classe: 'mention-p' };
+        return { texte: 'Ajourné', classe: 'mention-f' };
+    }
+
+    function actualiserTableau() {
+        // Tri décroissant par note
+        etudiants.sort((a, b) => b.note - a.note);
+
+        const tbody = document.getElementById('tableauResultats');
+        tbody.innerHTML = '';
+
+        etudiants.forEach((etudiant, index) => {
+            const mention = ObtenirMention(etudiant.note);
+            const rang = index + 1;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${rang}${rang === 1 ? 'er' : 'ème'}</strong></td>
+                <td>${etudiant.nom}</td>
+                <td>${etudiant.note.toFixed(2)}</td>
+                <td class="${mention.classe}">${mention.texte}</td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn-warning" onclick="ouvrirEdition(${index})">✏️ Éditer</button>
+                        <button class="btn-danger" onclick="supprimer(${index})">🗑️ Supprimer</button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        mettreAJourStatistiques();
+    }
+
+    function mettreAJourStatistiques() {
+        if (etudiants.length === 0) {
+            document.getElementById('stats').innerHTML = '';
+            return;
+        }
+
+        const notes = etudiants.map(e => e.note);
+        const moyenne = (notes.reduce((a, b) => a + b, 0) / notes.length).toFixed(2);
+        const min = Math.min(...notes).toFixed(2);
+        const max = Math.max(...notes).toFixed(2);
+        const total = etudiants.length;
+
+        document.getElementById('stats').innerHTML = `
+            <div class="stat-box">
+                <strong>${total}</strong>
+                <span>Étudiants</span>
+            </div>
+            <div class="stat-box">
+                <strong>${moyenne}</strong>
+                <span>Moyenne</span>
+            </div>
+            <div class="stat-box">
+                <strong>${max}</strong>
+                <span>Meilleure note</span>
+            </div>
+            <div class="stat-box">
+                <strong>${min}</strong>
+                <span>Note la plus basse</span>
+            </div>
+        `;
+    }
+
+    function ouvrirEdition(index) {
+        editIndex = index;
+        document.getElementById('editNom').value = etudiants[index].nom;
+        document.getElementById('editNote').value = etudiants[index].note;
+        document.getElementById('editModal').classList.add('active');
+    }
+
+    function fermerModal() {
+        document.getElementById('editModal').classList.remove('active');
+        editIndex = -1;
+    }
+
+    function sauvegarderEdition() {
+        const nom = document.getElementById('editNom').value.trim();
+        const note = parseFloat(document.getElementById('editNote').value);
+
+        if (!nom || isNaN(note)) {
+            alert('Veuillez entrer des valeurs valides');
+            return;
+        }
+
+        etudiants[editIndex] = { nom, note };
+        sauvegarderDonnees();
+        actualiserTableau();
+        fermerModal();
+    }
+
+    function supprimer(index) {
+        if (confirm('Êtes-vous sûr de vouloir supprimer cet étudiant ?')) {
+            etudiants.splice(index, 1);
+            sauvegarderDonnees();
+            actualiserTableau();
+        }
+    }
+
+    function exporterCSV() {
+        if (etudiants.length === 0) {
+            alert('Aucune donnée à exporter');
+            return;
+        }
+
+        let csv = 'Rang,Nom & Prénom,Note / 20,Mention\n';
+        etudiants.forEach((etudiant, index) => {
+            const mention = ObtenirMention(etudiant.note).texte;
+            csv += `${index + 1},${etudiant.nom},${etudiant.note.toFixed(2)},${mention}\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'resultats_' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.click();
+    }
+
+    function exporterJSON() {
+        if (etudiants.length === 0) {
+            alert('Aucune donnée à exporter');
+            return;
+        }
+
+        const donnees = etudiants.map((etudiant, index) => ({
+            rang: index + 1,
+            nom: etudiant.nom,
+            note: etudiant.note,
+            mention: ObtenirMention(etudiant.note).texte
+        }));
+
+        const blob = new Blob([JSON.stringify(donnees, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'resultats_' + new Date().toISOString().slice(0, 10) + '.json';
+        a.click();
+    }
+
+    function effacerTout() {
+        if (confirm('Êtes-vous sûr de vouloir effacer toutes les données ? Cette action est irréversible.')) {
+            etudiants = [];
+            sauvegarderDonnees();
+            actualiserTableau();
+        }
+    }
+
+    // Fermer le modal en cliquant en dehors
+    document.getElementById('editModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            fermerModal();
+        }
+    });
+
+    // Charger les données au démarrage
+    chargerDonnees();
+</script>
+
+</body>
+</html>
